@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Treinos — Paulo</title>
+  <style>
+    body { font-family: -apple-system, system-ui, Arial; margin: 14px; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .sub { opacity: .7; font-size: 13px; margin-bottom: 10px; }
+    .topbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom: 10px; }
+    select { padding: 10px; border-radius: 12px; border: 1px solid #ccc; }
+    button { padding: 10px 12px; border-radius: 12px; border: 1px solid #ccc; background: #f6f6f6; }
+    button.primary { border-color:#111; background:#111; color:#fff; }
+    .card { border: 1px solid #ddd; border-radius: 14px; padding: 12px; margin: 10px 0; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .name { font-weight: 700; font-size: 15px; }
+    .done { opacity:.55; text-decoration: line-through; }
+    .pill { padding: 6px 10px; border-radius: 999px; border:1px solid #ddd; font-size: 12px; opacity:.85; }
+    input[type="text"] { width: 120px; padding: 9px; border-radius: 12px; border: 1px solid #ccc; }
+    .timer { font-variant-numeric: tabular-nums; font-weight:800; font-size: 16px; }
+    details { margin-top: 8px; }
+    summary { cursor:pointer; }
+    .muted { font-size:12px; opacity:.7; }
+    .footer { margin-top: 14px; display:flex; gap:10px; flex-wrap:wrap; }
+    .hr { height:1px; background:#eee; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>Treinos</h1>
+  <div class="sub">Offline. Sem assinatura. Check + carga + reps + notas + timer.</div>
+
+  <div class="topbar">
+    <select id="workoutSelect"></select>
+    <button class="primary" id="newSession">Nova sessão</button>
+    <button id="finishSession">Concluir (salvar no histórico)</button>
+    <button id="addExercise">Adicionar exercício</button>
+    <button id="resetDefaults">Resetar treinos (padrão)</button>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="pill">Timer</span>
+      <span class="timer" id="timer">00:00</span>
+      <button class="primary" id="startRestGeneric">Iniciar (60s)</button>
+      <button id="stopRest">Parar</button>
+    </div>
+    <div class="muted" style="margin-top:6px;">Dica: use “Descanso” dentro do exercício pra puxar o tempo certo.</div>
+  </div>
+
+  <div id="workoutMeta" class="card" style="display:none;"></div>
+
+  <div id="list"></div>
+
+  <details class="card">
+    <summary><b>Histórico (últimas 10 sessões)</b></summary>
+    <div class="muted">Salva localmente no seu iPhone (não vai pra nuvem).</div>
+    <div class="hr"></div>
+    <div id="history"></div>
+    <button style="margin-top:10px;" id="clearHistory">Apagar histórico</button>
+  </details>
+
+  <div class="footer">
+    <button id="save">Salvar agora</button>
+    <button id="resetChecks">Desmarcar “feito”</button>
+    <button id="clearAll">Zerar dados do treino atual</button>
+  </div>
+
+<script>
+/** =========================
+ *  1) TREINOS (editáveis)
+ *  ========================= **/
+const DEFAULT_WORKOUTS = [
+  {
+    id: "sup1_peito_ombro_triceps",
+    title: "Superior 1 — Peito, Ombro e Tríceps",
+    note: "Baseado nos seus prints. Ajuste qualquer item no botão “Editar”.",
+    exercises: [
+      { key:"supino_reto_halter", name:"Supino Reto com Halter", sets: 4, reps:"12–15", restSec: 120 },
+      { key:"crucifixo_aparelho", name:"Crucifixo no Aparelho", sets: 3, reps:"15–20", restSec: 90 },
+      { key:"remada_alta_cabo", name:"Remada Alta no Cabo", sets: 4, reps:"12–15", restSec: 90 },
+      { key:"elevacao_lateral_peito_apoiado", name:"Elevação Lateral com Halter (peito apoiado no banco)", sets: 4, reps:"15–20", restSec: 60 },
+      { key:"triceps_cruzado_duplo_cabo", name:"Tríceps Cruzado Duplo no Cabo", sets: 4, reps:"15–20", restSec: 60 },
+    ]
+  },
+  {
+    id: "inf1_quad_panturrilha",
+    title: "Inferior 1 — Quadríceps e Panturrilha",
+    note: "Panturrilha em pé no print não mostra reps/descanso completo: deixei padrão. Edite se precisar.",
+    exercises: [
+      { key:"agachamento_smith", name:"Agachamento Costas no Smith", sets: 5, reps:"8–12", restSec: 120 },
+      { key:"cadeira_extensora", name:"Cadeira Extensora", sets: 4, reps:"15–20", restSec: 90 },
+      { key:"belt_squat", name:"Belt Squat (inside shoulder width stance)", sets: 3, reps:"8–12", restSec: 150 },
+      { key:"panturrilha_pe", name:"Panturrilha em Pé na Máquina", sets: 4, reps:"12–15", restSec: 90 },
+    ]
+  },
+  {
+    id: "sup2_costas_biceps",
+    title: "Superior 2 — Costas e Bíceps",
+    note: "",
+    exercises: [
+      { key:"remada_curvada_halter", name:"Remada Curvada com Halter", sets: 5, reps:"8–12", restSec: 120 },
+      { key:"puxada_vertical_aberta_cabo", name:"Puxada Vertical Aberta no Cabo", sets: 4, reps:"12–15", restSec: 120 },
+      { key:"remada_fechada_cabo", name:"Remada Fechada no Cabo", sets: 3, reps:"12–15", restSec: 90 },
+      { key:"rosca_direta_cabo", name:"Rosca Direta no Cabo", sets: 4, reps:"12–15", restSec: 60 },
+      { key:"rosca_martelo_halter", name:"Rosca Martelo com Halter", sets: 3, reps:"15–20", restSec: 60 }
+    ]
+  },
+  {
+    id: "inf2_posterior_panturrilha",
+    title: "Inferior 2 — Posterior e Panturrilha",
+    note: "",
+    exercises: [
+      { key:"cadeira_flexora", name:"Cadeira Flexora", sets: 4, reps:"15–20", restSec: 90 }, // print não mostra séries, deixei 4
+      { key:"mesa_flexora", name:"Mesa Flexora", sets: 5, reps:"12–15", restSec: 90 },
+      { key:"cadeira_abdutora_curvado", name:"Cadeira Abdutora Curvado", sets: 4, reps:"12–15", restSec: 90 },
+      { key:"panturrilha_sentado", name:"Panturrilha Sentado", sets: 4, reps:"15–20", restSec: 90 },
+    ]
+  },
+  {
+    id: "corpo_inteiro",
+    title: "Corpo Inteiro — Quadríceps, Peito, Posterior e Costas",
+    note: "",
+    exercises: [
+      { key:"supino_sentado_maquina", name:"Supino Sentado na Máquina", sets: 3, reps:"12–15", restSec: 120 }, // séries não visível no print, deixei 3
+      { key:"remada_articulada_aberta", name:"Remada Articulada Aberta", sets: 3, reps:"12–15", restSec: 120 },
+      { key:"crucifixo_invertido_maquina", name:"Crucifixo Invertido na Máquina", sets: 2, reps:"15–20", restSec: 60 },
+      { key:"leg_press", name:"Leg Press", sets: 3, reps:"12–15", restSec: 120 },
+      { key:"mesa_flexora_ci", name:"Mesa Flexora", sets: 3, reps:"15–20", restSec: 90 },
+      { key:"cadeira_abdutora_ci", name:"Cadeira Abdutora", sets: 3, reps:"12–15", restSec: 90 },
+    ]
+  },
+  {
+    id: "corrida_longo",
+    title: "Corrida 2 — Longo",
+    note: "Objetivo: corrida longa ≤ 10 km/h, pace confortável (consegue conversar). RPE ~6. Duração alvo: 70 min.",
+    exercises: [
+      { key:"corrida", name:"Corrida (Longo)", sets: 1, reps:"70 min", restSec: 0 },
+    ]
+  }
+];
+
+/** =========================
+ *  2) STORAGE
+ *  ========================= **/
+const CFG_KEY = "treino_cfg_v2";
+const ACTIVE_KEY = "treino_active_workout_v2";
+
+function loadCfg(){
+  const raw = localStorage.getItem(CFG_KEY);
+  if(!raw) return structuredClone(DEFAULT_WORKOUTS);
+  try { return JSON.parse(raw); } catch { localStorage.removeItem(CFG_KEY); return structuredClone(DEFAULT_WORKOUTS); }
+}
+function saveCfg(cfg){ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }
+
+function stateKey(workoutId){ return `treino_state_${workoutId}_v2`; }
+function histKey(workoutId){ return `treino_hist_${workoutId}_v2`; }
+
+function loadState(workout){
+  const raw = localStorage.getItem(stateKey(workout.id));
+  if(!raw){
+    const init = {};
+    workout.exercises.forEach(ex => init[ex.key] = { done:false, weight:"", repsDone:"", notes:"" });
+    return init;
+  }
+  try { return JSON.parse(raw); } catch { localStorage.removeItem(stateKey(workout.id)); return loadState(workout); }
+}
+function saveState(workout, st){ localStorage.setItem(stateKey(workout.id), JSON.stringify(st)); }
+
+function loadHist(workoutId){
+  const raw = localStorage.getItem(histKey(workoutId));
+  if(!raw) return [];
+  try { return JSON.parse(raw); } catch { localStorage.removeItem(histKey(workoutId)); return []; }
+}
+function saveHist(workoutId, hist){ localStorage.setItem(histKey(workoutId), JSON.stringify(hist.slice(0,10))); }
+
+/** =========================
+ *  3) TIMER
+ *  ========================= **/
+let t = null;
+let remaining = 0;
+const timerEl = document.getElementById("timer");
+
+function mmss(sec){
+  const m = String(Math.floor(sec/60)).padStart(2,'0');
+  const s = String(sec%60).padStart(2,'0');
+  return `${m}:${s}`;
+}
+function stopTimer(){
+  if(t) clearInterval(t);
+  t = null;
+}
+function startTimer(sec){
+  stopTimer();
+  remaining = sec;
+  timerEl.textContent = mmss(remaining);
+  if(sec <= 0) return;
+  t = setInterval(() => {
+    remaining--;
+    timerEl.textContent = mmss(Math.max(0,remaining));
+    if(remaining <= 0){
+      stopTimer();
+      try { navigator.vibrate && navigator.vibrate([200,100,200]); } catch(e){}
+      alert("Descanso acabou. Próxima série.");
+    }
+  }, 1000);
+}
+
+document.getElementById("startRestGeneric").addEventListener("click", () => startTimer(60));
+document.getElementById("stopRest").addEventListener("click", stopTimer);
+
+/** =========================
+ *  4) UI
+ *  ========================= **/
+let cfg = loadCfg();
+const selectEl = document.getElementById("workoutSelect");
+const listEl = document.getElementById("list");
+const metaEl = document.getElementById("workoutMeta");
+const historyEl = document.getElementById("history");
+
+function escapeHtml(str){
+  return String(str||"")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function getActiveWorkoutId(){
+  return localStorage.getItem(ACTIVE_KEY) || cfg[0]?.id;
+}
+function setActiveWorkoutId(id){
+  localStorage.setItem(ACTIVE_KEY, id);
+}
+function getWorkoutById(id){
+  return cfg.find(w => w.id === id) || cfg[0];
+}
+
+function renderSelect(){
+  selectEl.innerHTML = "";
+  cfg.forEach(w => {
+    const opt = document.createElement("option");
+    opt.value = w.id;
+    opt.textContent = w.title;
+    selectEl.appendChild(opt);
+  });
+  selectEl.value = getActiveWorkoutId();
+}
+
+function renderMeta(workout){
+  if(workout.note && workout.note.trim()){
+    metaEl.style.display = "block";
+    metaEl.innerHTML = `<b>${escapeHtml(workout.title)}</b><div class="muted" style="margin-top:6px;">${escapeHtml(workout.note)}</div>`;
+  } else {
+    metaEl.style.display = "none";
+    metaEl.innerHTML = "";
+  }
+}
+
+function renderHistory(workoutId){
+  const hist = loadHist(workoutId);
+  if(hist.length === 0){
+    historyEl.innerHTML = `<div class="muted">Sem histórico ainda.</div>`;
+    return;
+  }
+  historyEl.innerHTML = hist.map(h => {
+    const when = new Date(h.ts).toLocaleString();
+    return `
+      <div style="margin:10px 0;">
+        <b>${escapeHtml(when)}</b>
+        <div class="muted">Concluídos: ${h.doneCount}/${h.total}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function render(){
+  const workout = getWorkoutById(getActiveWorkoutId());
+  const st = loadState(workout);
+
+  renderMeta(workout);
+  renderHistory(workout.id);
+
+  listEl.innerHTML = "";
+
+  workout.exercises.forEach(ex => {
+    const cur = st[ex.key] || { done:false, weight:"", repsDone:"", notes:"" };
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const head = document.createElement("div");
+    head.className = "row";
+    head.innerHTML = `
+      <label class="row" style="gap:8px;">
+        <input type="checkbox" ${cur.done ? "checked":""} />
+        <span class="name ${cur.done ? "done":""}">${escapeHtml(ex.name)}</span>
+      </label>
+      <span class="pill">${ex.sets} série(s)</span>
+      <span class="pill">${escapeHtml(ex.reps)} reps</span>
+      <span class="pill">Descanso: ${ex.restSec ? (Math.floor(ex.restSec/60)+":"+String(ex.restSec%60).padStart(2,"0")) : "—"}</span>
+    `;
+
+    const body = document.createElement("div");
+    body.className = "row";
+    body.style.marginTop = "10px";
+    body.innerHTML = `
+      <div class="row"><span class="muted">Carga</span><input type="text" placeholder="ex: 25kg" value="${escapeHtml(cur.weight)}" /></div>
+      <div class="row"><span class="muted">Reps feitas</span><input type="text" placeholder="ex: 12/11/10" value="${escapeHtml(cur.repsDone)}" /></div>
+      <div class="row"><span class="muted">Notas</span><input type="text" placeholder="ex: falhou na 3ª" value="${escapeHtml(cur.notes)}" /></div>
+      <button class="primary">Descanso</button>
+      <button>Editar</button>
+      <button>Remover</button>
+    `;
+
+    const checkbox = head.querySelector('input[type="checkbox"]');
+    const [wInp, rInp, nInp] = body.querySelectorAll('input[type="text"]');
+    const [restBtn, editBtn, removeBtn] = body.querySelectorAll("button");
+
+    checkbox.addEventListener("change", () => {
+      cur.done = checkbox.checked;
+      st[ex.key] = cur;
+      saveState(workout, st);
+      render();
+    });
+
+    function bindInput(inp, field){
+      inp.addEventListener("input", () => { cur[field] = inp.value; st[ex.key] = cur; });
+      inp.addEventListener("blur", () => { saveState(workout, st); });
+    }
+    bindInput(wInp, "weight");
+    bindInput(rInp, "repsDone");
+    bindInput(nInp, "notes");
+
+    restBtn.addEventListener("click", () => startTimer(ex.restSec || 0));
+
+    editBtn.addEventListener("click", () => {
+      const sets = prompt("Séries:", ex.sets);
+      if(sets === null) return;
+      const reps = prompt("Reps (ex: 12–15 / 70 min):", ex.reps);
+      if(reps === null) return;
+      const rest = prompt("Descanso em segundos (ex: 90). Use 0 se não tiver:", ex.restSec);
+      if(rest === null) return;
+
+      const w = getWorkoutById(workout.id);
+      const target = w.exercises.find(e => e.key === ex.key);
+      target.sets = Math.max(1, parseInt(sets,10) || target.sets);
+      target.reps = reps.trim() || target.reps;
+      target.restSec = Math.max(0, parseInt(rest,10) || 0);
+
+      saveCfg(cfg);
+      render();
+    });
+
+    removeBtn.addEventListener("click", () => {
+      if(!confirm("Remover este exercício do treino?")) return;
+      const w = getWorkoutById(workout.id);
+      w.exercises = w.exercises.filter(e => e.key !== ex.key);
+      delete st[ex.key];
+      saveCfg(cfg);
+      saveState(workout, st);
+      render();
+    });
+
+    card.appendChild(head);
+    card.appendChild(body);
+    listEl.appendChild(card);
+  });
+}
+
+selectEl.addEventListener("change", () => {
+  setActiveWorkoutId(selectEl.value);
+  render();
+});
+
+document.getElementById("save").addEventListener("click", () => {
+  const workout = getWorkoutById(getActiveWorkoutId());
+  const st = loadState(workout);
+  saveState(workout, st);
+  alert("Salvo.");
+});
+
+document.getElementById("resetChecks").addEventListener("click", () => {
+  const workout = getWorkoutById(getActiveWorkoutId());
+  const st = loadState(workout);
+  workout.exercises.forEach(ex => { if(st[ex.key]) st[ex.key].done = false; });
+  saveState(workout, st);
+  render();
+});
+
+document.getElementById("clearAll").addEventListener("click", () => {
+  const workout = getWorkoutById(getActiveWorkoutId());
+  if(!confirm("Zerar dados do treino atual (carga, reps, notas e checks)?")) return;
+  localStorage.removeItem(stateKey(workout.id));
+  render();
+});
+
+document.getElementById("newSession").addEventListener("click", () => {
+  const workout = getWorkoutById(getActiveWorkoutId());
+  const st = loadState(workout);
+  workout.exercises.forEach(ex => {
+    if(!st[ex.key]) st[ex.key] = { done:false, weight:"", repsDone:"", notes:"" };
+    st[ex.key].done = false;
+    st[ex.key].repsDone = "";
+  });
+  saveState(workout, st);
+  render();
+});
+
+document.getElementById("finishSession").addEventListener("click", () => {
+  const workout = getWorkoutById(getActiveWorkoutId());
+  const st = loadState(workout);
+  const total = workout.exercises.length;
+  const doneCount = workout.exercises.filter(ex => st[ex.key]?.done).length;
+
+  const hist = loadHist(workout.id);
+  hist.unshift({ ts: Date.now(), total, doneCount });
+  saveHist(workout.id, hist);
+
+  // após concluir, inicia nova sessão (mantém cargas/notas, limpa checks e reps feitas)
+  workout.exercises.forEach(ex => {
+    if(st[ex.key]) {
+      st[ex.key].done = false;
+      st[ex.key].repsDone = "";
+    }
+  });
+  saveState(workout, st);
+
+  render();
+  alert("Sessão salva no histórico.");
+});
+
+document.getElementById("clearHistory").addEventListener("click", () => {
+  const workoutId = getActiveWorkoutId();
+  if(!confirm("Apagar histórico deste treino?")) return;
+  localStorage.removeItem(histKey(workoutId));
+  renderHistory(workoutId);
+});
+
+document.getElementById("addExercise").addEventListener("click", () => {
+  const workout = getWorkoutById(getActiveWorkoutId());
+  const name = prompt("Nome do exercício:");
+  if(!name) return;
+
+  const sets = parseInt(prompt("Séries:", "3"), 10) || 3;
+  const reps = prompt("Reps (ex: 12–15):", "12–15") || "12–15";
+  const restSec = parseInt(prompt("Descanso (segundos):", "90"), 10) || 90;
+
+  const key = "ex_" + Date.now();
+  workout.exercises.push({ key, name: name.trim(), sets: Math.max(1, sets), reps: reps.trim(), restSec: Math.max(0, restSec) });
+
+  const st = loadState(workout);
+  st[key] = { done:false, weight:"", repsDone:"", notes:"" };
+
+  saveCfg(cfg);
+  saveState(workout, st);
+  render();
+});
+
+document.getElementById("resetDefaults").addEventListener("click", () => {
+  if(!confirm("Resetar treinos para o padrão? (não apaga seus registros de carga/reps)")) return;
+  cfg = structuredClone(DEFAULT_WORKOUTS);
+  saveCfg(cfg);
+  renderSelect();
+  render();
+});
+
+// boot
+(function init(){
+  cfg = loadCfg();
+  renderSelect();
+  const active = getActiveWorkoutId();
+  if(!cfg.find(w => w.id === active)) setActiveWorkoutId(cfg[0].id);
+  render();
+})();
+</script>
+</body>
+</html>
